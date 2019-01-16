@@ -37,7 +37,7 @@
 // would stride across cache lines.
 #define CACHELINE_IN_BYTES_SZ (256)
 //#define CACHELINE_IN_BYTES_SZ (64)
-#define CACHELINE_SZ (CACHELINE_IN_BYTES_SZ/sizeof(uint32_t))
+#define CACHELINE_SZ (CACHELINE_IN_BYTES_SZ/sizeof(uint64_t))
 
 // in # bytes
 #define PAGE_SZ (4096) 
@@ -50,10 +50,10 @@
 #include <math.h>
 
 // Global Variables
-uint32_t  g_num_cores;
-uint32_t  g_num_elements;  
-uint32_t  g_num_iterations;
-uint32_t  g_performed_iterations;
+uint64_t  g_num_cores;
+uint64_t  g_num_elements;  
+uint64_t  g_num_iterations;
+uint64_t  g_performed_iterations;
 
 int g_stride;
 int g_run_type;  // choose between stride size, or random stride 
@@ -65,11 +65,11 @@ double volatile run_time_s;
 
 
 // Function Declarations
-uint32_t initializeGlobalArrays(uint32_t* arr_n_ptr, uint32_t num_elements, uint32_t stride);
-uint32_t threadMain();
+int initializeGlobalArrays(uint64_t* arr_n_ptr, uint64_t num_elements, uint64_t stride);
+int threadMain();
 
-uint32_t printArray(uint32_t iter, uint32_t *arr_ptr, uint32_t num_elements, uint32_t stride);
-uint32_t verifyArray(uint32_t *arr_ptr, uint32_t num_elements, uint32_t stride);
+int printArray(uint64_t iter, uint64_t *arr_ptr, uint64_t num_elements, uint64_t stride);
+int verifyArray(uint64_t *arr_ptr, uint64_t num_elements, uint64_t stride);
 
 int main(int argc, char* argv[])
 {
@@ -86,8 +86,8 @@ int main(int argc, char* argv[])
       return 1;
    }
 
-   g_num_elements   = atoi(argv[1]);
-   g_num_iterations = atoi(argv[2]);
+   g_num_elements   = atol(argv[1]);
+   g_num_iterations = atol(argv[2]);
    g_run_type       = atoi(argv[3]);
 
 
@@ -118,7 +118,7 @@ int main(int argc, char* argv[])
 
    // this volatile ret_val is crucial, otherwise the entire run-loop 
    // gets optimized away! :(
-   uint32_t volatile ret_val = threadMain();  
+   uint64_t volatile ret_val = threadMain();  
 
 #ifdef PRINT_SCRIPT_FRIENDLY
    fprintf(stdout, "App:[caches],NumThreads:[%d],AppSize:[%d],Time:[%g], TimeUnits:[Time Per Iteration (ns)],NumIterations:[%u],RunType:[%d]\n",
@@ -138,16 +138,16 @@ int main(int argc, char* argv[])
 }
 
 
-uint32_t threadMain()
+int threadMain()
 {
-   uint32_t* arr_n_ptr;
+   uint64_t* arr_n_ptr;
 
    // pad out memory to next PAGE_SZ to make initialization easier...
-   uint32_t num_total_elements_per_page = PAGE_SZ/sizeof(uint32_t);
+   uint64_t num_total_elements_per_page = PAGE_SZ/sizeof(uint64_t);
    int num_elements_allocated = g_num_elements + (num_total_elements_per_page - (g_num_elements % num_total_elements_per_page));
    
    
-   arr_n_ptr   = (uint32_t *) malloc(num_elements_allocated * sizeof(uint32_t));
+   arr_n_ptr   = (uint64_t *) malloc(num_elements_allocated * sizeof(uint64_t));
    
    initializeGlobalArrays( arr_n_ptr,
                            g_num_elements,
@@ -171,7 +171,7 @@ uint32_t threadMain()
 
    // we have to run for AT LEAST g_num_iterations, so dont muck up critical section 
    // with unnecessary code
-   for (uint32_t k = 0; k < g_num_iterations; k++)
+   for (uint64_t k = 0; k < g_num_iterations; k++)
    {
       idx = arr_n_ptr[idx];
    }
@@ -179,7 +179,7 @@ uint32_t threadMain()
    while (cc_get_seconds(clk_freq) < estimated_end_time)
    {
       g_performed_iterations += g_num_iterations;
-      for (uint32_t k = 0; k < g_num_iterations; k++)
+      for (uint64_t k = 0; k < g_num_iterations; k++)
       {
          idx = arr_n_ptr[idx];
       }
@@ -194,7 +194,7 @@ uint32_t threadMain()
 
    intptr_t idx = 0;
 
-   for (uint32_t k = 0; k < g_num_iterations; k++)
+   for (uint64_t k = 0; k < g_num_iterations; k++)
    {
       idx = arr_n_ptr[idx];
    }
@@ -217,7 +217,7 @@ uint32_t threadMain()
 
    // prevent compiler from removing ptr chasing...
    // although the receiver must put idx into a volatile variable as well!
-   return (uint32_t) idx; 
+   return (int) idx; 
 }
 
 
@@ -228,7 +228,7 @@ uint32_t threadMain()
 //returns the index to the last index (to help the calling function stitch pages together)
 //interleaving_space is the size between entries (i.e., 2 means generated lines are even/odd)
 //assumes num_accesses can be divided by interleaving_space
-uint32_t initializePage(uint32_t* arr_n_ptr, uint32_t page_offset, uint32_t num_accesses, uint32_t stride, uint32_t interleaving_space)
+uint64_t initializePage(uint64_t* arr_n_ptr, uint64_t page_offset, uint64_t num_accesses, uint64_t stride, uint64_t interleaving_space)
 {
    if (interleaving_space > 2)
       printf("ERROR: unsupported interleaving_space\n");
@@ -239,12 +239,12 @@ uint32_t initializePage(uint32_t* arr_n_ptr, uint32_t page_offset, uint32_t num_
 #endif
 
    cc_lfsr_t lfsr;
-   uint32_t lfsr_init_val = 1; //TODO provide different streams different starting positions?
+   uint64_t lfsr_init_val = 1; //TODO provide different streams different starting positions?
    //(-1) because we are going to loop through twice, once for odd and once for even entries 
-   uint32_t lfsr_width = (log(num_accesses) / log(2)) - (interleaving_space - 1); //TODO EVENODD
+   uint64_t lfsr_width = (log(num_accesses) / log(2)) - (interleaving_space - 1); //TODO EVENODD
 
 
-   uint32_t max_accesses = (0x1 << lfsr_width)*interleaving_space;
+   uint64_t max_accesses = (0x1 << lfsr_width)*interleaving_space;
 
 //   printf("width=%d || max_accesses = %d, num_elements = %d\n", lfsr_width, max_accesses, num_accesses);
 
@@ -253,8 +253,8 @@ uint32_t initializePage(uint32_t* arr_n_ptr, uint32_t page_offset, uint32_t num_
       lfsr_width+=interleaving_space;
 
 
-   uint32_t idx;
-   uint32_t curr_idx, next_idx;
+   uint64_t idx;
+   uint64_t curr_idx, next_idx;
 
    curr_idx = page_offset;
 
@@ -335,12 +335,12 @@ uint32_t initializePage(uint32_t* arr_n_ptr, uint32_t page_offset, uint32_t num_
 
 // this is the future initializeGlobalArrays, but it has one or two bugs so it's commented out for now
 // it will more accurately provide the L3 access times on some processors
-uint32_t initializeGlobalArrays(uint32_t* arr_n_ptr, uint32_t num_elements, uint32_t stride)
+int initializeGlobalArrays(uint64_t* arr_n_ptr, uint64_t num_elements, uint64_t stride)
 {
    // create a strided access array (no randomization)
    if(g_run_type != 0)
    {
-      for (uint32_t i = 0; i < g_num_elements-1; i++)
+      for (uint64_t i = 0; i < g_num_elements-1; i++)
       {
          arr_n_ptr[i % num_elements] = (i+stride) % num_elements;
       }
@@ -363,14 +363,14 @@ uint32_t initializeGlobalArrays(uint32_t* arr_n_ptr, uint32_t num_elements, uint
          return 0;
       }
       
-      uint32_t num_elements_per_page = PAGE_SZ/sizeof(uint32_t);
+      uint64_t num_elements_per_page = PAGE_SZ/sizeof(uint64_t);
 
 #ifdef DEBUG
-      printf("\nnum_elements_per_page = %lu\n\n", PAGE_SZ/sizeof(uint32_t));
+      printf("\nnum_elements_per_page = %lu\n\n", PAGE_SZ/sizeof(uint64_t));
 #endif
                     
       
-      uint32_t last_idx;
+      uint64_t last_idx;
 
       // two-level randomization (this is the outer level for-loop)
       // for each page...
@@ -380,7 +380,7 @@ uint32_t initializeGlobalArrays(uint32_t* arr_n_ptr, uint32_t num_elements, uint
          printf("\nStarting New Page: i=%d, page offset = %d\n", i, i); 
 #endif
          
-         uint32_t page_offset = i;
+         uint64_t page_offset = i;
 
 
          //TODO test for partial page (which is always the last page)...
@@ -425,11 +425,11 @@ uint32_t initializeGlobalArrays(uint32_t* arr_n_ptr, uint32_t num_elements, uint
 }
 
 
-uint32_t printArray(uint32_t iter, uint32_t *arr_ptr, uint32_t num_elements, uint32_t stride )
+int printArray(uint64_t iter, uint64_t *arr_ptr, uint64_t num_elements, uint64_t stride )
 {
    fprintf(stderr, "Chasing through Array (run thru for 2x*num_el/stride) after iteration: %d\n", iter);
-   uint32_t idx = 0;
-   for (uint32_t i = 0; i < 2*num_elements/stride; i++)
+   uint64_t idx = 0;
+   for (uint64_t i = 0; i < 2*num_elements/stride; i++)
    {
       fprintf(stderr, "%3d, ", arr_ptr[idx]);
       idx = arr_ptr[idx];
@@ -437,7 +437,7 @@ uint32_t printArray(uint32_t iter, uint32_t *arr_ptr, uint32_t num_elements, uin
    fprintf(stderr, "\n");
    
    fprintf(stderr, "arr_ptr: ");
-   for (uint32_t i = 0; i < num_elements; i++)
+   for (uint64_t i = 0; i < num_elements; i++)
    {
       if (i % stride == 0) fprintf(stderr, "\n");
       fprintf(stderr, "%3d, ", arr_ptr[i]);
@@ -448,16 +448,16 @@ uint32_t printArray(uint32_t iter, uint32_t *arr_ptr, uint32_t num_elements, uin
 }
 
 
-uint32_t verifyArray(uint32_t *arr_ptr, uint32_t num_elements, uint32_t stride)
+int verifyArray(uint64_t *arr_ptr, uint64_t num_elements, uint64_t stride)
 {
-   uint32_t idx = 0;
-   uint32_t counter = 0;
+   uint64_t idx = 0;
+   uint64_t counter = 0;
 
-   uint32_t first_idx = 0;
-   uint32_t finished = 0;
+   uint64_t first_idx = 0;
+   int finished = 0;
 
-   uint32_t* verify_array;
-   verify_array = (uint32_t *) calloc(g_num_elements, sizeof(uint32_t));
+   uint64_t* verify_array;
+   verify_array = (uint64_t *) calloc(g_num_elements, sizeof(uint64_t));
    
    while (!finished)
    {
@@ -469,9 +469,9 @@ uint32_t verifyArray(uint32_t *arr_ptr, uint32_t num_elements, uint32_t stride)
          finished = 1;
    }
 
-   uint32_t error = 0;
+   int error = 0;
 
-   for (uint32_t i = 0; i < num_elements; i+=stride)
+   for (uint64_t i = 0; i < num_elements; i+=stride)
    {
       if(verify_array[i] != 1)  
       {
