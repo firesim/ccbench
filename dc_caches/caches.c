@@ -63,7 +63,8 @@ uint64_t  g_num_elements;
 uint64_t  g_num_iterations;
 uint64_t  g_performed_iterations;
 uint64_t  g_macaddr_suffix;
-uint64_t  g_span_offset;
+uint64_t  g_start_extent;
+uint64_t  g_num_servers;
 
 int g_stride;
 int g_run_type;  // choose between stride size, or random stride 
@@ -87,7 +88,7 @@ int main(int argc, char* argv[])
    printf("\nBegin Test\n");
 #endif
 
-   if (argc != 6) 
+   if (argc != 7)
    {
       fprintf(stderr, "argc=%d\n", argc);
       fprintf(stderr, "\n[Usage]: cache_size <Number of Array Elements (Total)> <Number of Iterations> <RunType> <MAC Addr Suffix>\n\n");
@@ -100,7 +101,8 @@ int main(int argc, char* argv[])
    g_num_iterations = atol(argv[2]);
    g_run_type       = atoi(argv[3]);
    g_macaddr_suffix = atol(argv[4]);
-   g_span_offset    = atol(argv[5]);
+   g_start_extent   = atol(argv[5]);
+   g_num_servers    = atol(argv[6]);
 
 
 #ifdef DEBUG
@@ -108,7 +110,8 @@ int main(int argc, char* argv[])
    fprintf(stderr, "Number of Iterations  = %ld\n",   g_num_iterations);
    fprintf(stderr, "Stride size (run type)= %ld\n",   g_run_type);
    fprintf(stderr, "MAC address suffix    = %lx\n",   g_macaddr_suffix);
-   fprintf(stderr, "Span offset           = %ld\n\n", g_span_offset);
+   fprintf(stderr, "Starting extent       = %ld\n",   g_start_extent);
+   fprintf(stderr, "Num servers           = %ld\n\n", g_num_servers);
 #endif
 
    if(g_run_type > 0)
@@ -151,7 +154,7 @@ int main(int argc, char* argv[])
   return 0;
 }
 
-void setupExtentTable(long macsuffix, long startspan, size_t size)
+void setupExtentTable(long startmacsuffix, long startext, int numservers, size_t size)
 {
    int fd;
    size_t nextents = (size - 1) / EXTENT_SZ + 1;
@@ -173,8 +176,12 @@ void setupExtentTable(long macsuffix, long startspan, size_t size)
       abort();
    }
 
-   for (int i = 0; i < nextents; i++)
-      exttab[i] = (macsuffix << 48) | (1L << 47) | (i + startspan);
+   for (int i = 0; i < nextents; i++) {
+      long server = i % numservers;
+      uint64_t macsuffix = startmacsuffix + (server << 16);
+      uint64_t extid = startext + (i / numservers);
+      exttab[i] = (macsuffix << 48) | (1L << 47) | extid;
+   }
 
    munmap(exttab, nextents * sizeof(uint64_t));
    close(fd);
@@ -189,7 +196,7 @@ int threadMain()
    uint64_t num_total_elements_per_page = PAGE_SZ/sizeof(uint64_t);
    uint64_t num_elements_allocated = g_num_elements + (num_total_elements_per_page - (g_num_elements % num_total_elements_per_page));
    
-   setupExtentTable(g_macaddr_suffix, g_span_offset,
+   setupExtentTable(g_macaddr_suffix, g_start_extent, g_num_servers,
 		   num_elements_allocated * sizeof(uint64_t));
 
    fd = open("/dev/dram-cache-mem", O_RDWR);
